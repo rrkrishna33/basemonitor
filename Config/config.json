@@ -1,0 +1,21 @@
+{
+  "CentralConnectionString": "Server=OVHWEDEV-SQL027\\OVHCHN_DEV01;Database=CHN_DBA;Integrated Security=true;TrustServerCertificate=true;",
+  "AIConfig": {
+    "ApiKey": "PASTE_YOUR_GITHUB_PAT_HERE",
+    "BaseUrl": "https://models.inference.ai.azure.com",
+    "Model": "gpt-4o"
+  },
+  "CollectionIntervalSeconds": 60,
+  "QueryCollectionIntervalSeconds": 60,
+  "FragmentationIntervalSeconds": 3600,
+  "FragmentationDbTimeoutSeconds": 600,
+  "FragmentationMinPageCount": 200,
+  "FragmentationExcludeDatabases": [],
+  "RetentionDays": 30,
+  "LogPath": "C:\\Logs\\SqlMetricsService",
+  "MonitoredInstances": [
+    
+    { "Name": "OVHCHN_DEV01", "ConnectionString": "Server=OVHWEDEV-SQL027\\OVHCHN_DEV01;Database=master;Integrated Security=true;TrustServerCertificate=true;", "Tags": "CHN DEV" },
+    { "Name": "OVHCDP_INT01", "ConnectionString": "Server=OVHWEDEV-SQL015\\OVHCDP_INT01;Database=master;Integrated Security=true;TrustServerCertificate=true;", "Tags": "CDP INT" }
+      ]
+}
