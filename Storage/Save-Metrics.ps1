@@ -414,7 +414,9 @@ function Save-BackupStatus {
             $(if ($r.LastFullBackupAt) { $r.LastFullBackupAt } else { [DBNull]::Value }),
             $(if ($r.LastDiffBackupAt) { $r.LastDiffBackupAt } else { [DBNull]::Value }),
             $(if ($r.LastLogBackupAt) { $r.LastLogBackupAt } else { [DBNull]::Value }),
-            $r.FullBackupAgeHours,$r.DiffBackupAgeHours,$r.LogBackupAgeHours
+            $(if ([double]::IsNaN($r.FullBackupAgeHours)) { [DBNull]::Value } else { $r.FullBackupAgeHours }),
+            $(if ([double]::IsNaN($r.DiffBackupAgeHours)) { [DBNull]::Value } else { $r.DiffBackupAgeHours }),
+            $(if ([double]::IsNaN($r.LogBackupAgeHours))  { [DBNull]::Value } else { $r.LogBackupAgeHours })
         ) | Out-Null
     }
     $bcp = New-Object Microsoft.Data.SqlClient.SqlBulkCopy($Conn)
@@ -429,14 +431,19 @@ function Save-AgentJobHealth {
     if (-not $Rows -or $Rows.Count -eq 0) { return }
 
     $dt = New-Object System.Data.DataTable
-    @("InstanceId","CollectedAt","JobName","JobId","LastRunStatus","LastRunAt","LastRunMessage") |
-        ForEach-Object { $dt.Columns.Add($_) | Out-Null }
+    $dt.Columns.Add("InstanceId", [int]) | Out-Null
+    $dt.Columns.Add("CollectedAt", [datetime]) | Out-Null
+    $dt.Columns.Add("JobName", [string]) | Out-Null
+    $dt.Columns.Add("JobId", [guid]) | Out-Null
+    $dt.Columns.Add("LastRunStatus", [int]) | Out-Null
+    $dt.Columns.Add("LastRunAt", [datetime]) | Out-Null
+    $dt.Columns.Add("LastRunMessage", [string]) | Out-Null
 
     foreach ($r in $Rows) {
         $dt.Rows.Add(
             $r.InstanceId,$r.CollectedAt,$r.JobName,
-            $(if ($r.JobId) { $r.JobId } else { [DBNull]::Value }),
-            $r.LastRunStatus,
+            $(if ($r.JobId) { [guid]$r.JobId } else { [DBNull]::Value }),
+            $(if ($null -ne $r.LastRunStatus) { $r.LastRunStatus } else { [DBNull]::Value }),
             $(if ($r.LastRunAt) { $r.LastRunAt } else { [DBNull]::Value }),
             $(if ($r.LastRunMessage) { $r.LastRunMessage } else { [DBNull]::Value })
         ) | Out-Null

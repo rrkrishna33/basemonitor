@@ -32,17 +32,24 @@ if (Get-Module -ListAvailable -Name SqlServer -ErrorAction SilentlyContinue) {
     Import-Module SqlServer -ErrorAction Stop
 }
 
-# Verify the type is now available; if not, try locating the DLL directly
+# Verify the type is now available; if not, try locating the net6 copy shipped
+# with the SQL Server module. The default WindowsPowerShell module bundle can
+# load an incompatible SqlClient assembly in PowerShell 7.
 if (-not ([System.Management.Automation.PSTypeName]'Microsoft.Data.SqlClient.SqlConnection').Type) {
-    $assemblyPath = Get-ChildItem "$env:USERPROFILE\.nuget\packages\microsoft.data.sqlclient" `
-        -Recurse -Filter "Microsoft.Data.SqlClient.dll" -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -match "net6|net7|net8|netstandard" } |
-        Select-Object -ExpandProperty FullName -Last 1
+    $candidatePaths = @(
+        "C:\Program Files\WindowsPowerShell\Modules\SqlServer\*\coreclr\runtimes\win\lib\net6.0\Microsoft.Data.SqlClient.dll",
+        "C:\Program Files\PowerShell\Modules\SqlServer\*\coreclr\runtimes\win\lib\net6.0\Microsoft.Data.SqlClient.dll",
+        "$env:USERPROFILE\.nuget\packages\microsoft.data.sqlclient\**\Microsoft.Data.SqlClient.dll",
+        "C:\Program Files\dotnet\shared\**\Microsoft.Data.SqlClient.dll"
+    )
 
-    if (-not $assemblyPath) {
-        $assemblyPath = Get-ChildItem "C:\Program Files\dotnet\shared" `
-            -Recurse -Filter "Microsoft.Data.SqlClient.dll" -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty FullName -Last 1
+    $assemblyPath = $null
+    foreach ($pattern in $candidatePaths) {
+        $matches = Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+        if ($matches) {
+            $assemblyPath = $matches
+            break
+        }
     }
 
     if ($assemblyPath) {
@@ -112,8 +119,11 @@ function Open-CentralConnection {
 # ------------------------------------------------------------------
 # Timers
 # ------------------------------------------------------------------
+# NOTE: FragCollect starts at "now" (not MinValue) so cycle #1 does not
+# immediately trigger a long, per-database fragmentation scan and block
+# the core metrics/backup/agent collection from ever completing.
 $lastQueryCollect = [DateTime]::MinValue
-$lastFragCollect  = [DateTime]::MinValue
+$lastFragCollect  = [DateTime]::UtcNow
 $lastPurge        = [DateTime]::MinValue
 
 Write-Host ""
@@ -177,10 +187,10 @@ function Invoke-InstanceCollection {
     . "$ScriptRoot\Collectors\Get-DiskIOStats.ps1"
     . "$ScriptRoot\Collectors\Get-IndexFragmentation.ps1"
             . "$ScriptRoot\Collectors\Get-TempDbStats.ps1"
-            . "$ScriptRoot\Collectors\Get-DeadlockHistory.ps1"
             . "$ScriptRoot\Collectors\Get-LogFileStats.ps1"
             . "$ScriptRoot\Collectors\Get-IndexHealth.ps1"
-            . "$ScriptRoot\Collectors\Get-BackupAndAgentHealth.ps1"
+            . "$ScriptRoot\Collectors\Get-BackupHealth.ps1"
+            . "$ScriptRoot\Collectors\Get-AgentHealth.ps1"
     # Open dedicated central connection for this parallel worker
     $cConn = New-Object Microsoft.Data.SqlClient.SqlConnection($CentralConnStr)
     try {
@@ -295,10 +305,10 @@ while ($true) {
             . "$sr\Collectors\Get-DiskIOStats.ps1"
             . "$sr\Collectors\Get-IndexFragmentation.ps1"
             . "$sr\Collectors\Get-TempDbStats.ps1"
-            . "$sr\Collectors\Get-DeadlockHistory.ps1"
             . "$sr\Collectors\Get-LogFileStats.ps1"
             . "$sr\Collectors\Get-IndexHealth.ps1"
-            . "$sr\Collectors\Get-BackupAndAgentHealth.ps1"
+            . "$sr\Collectors\Get-BackupHealth.ps1"
+            . "$sr\Collectors\Get-AgentHealth.ps1"
             . "$sr\Storage\Save-Metrics.ps1"
 
             $cConn = New-Object Microsoft.Data.SqlClient.SqlConnection($cc)
@@ -311,10 +321,10 @@ while ($true) {
                 try { $cn = Get-Connections   -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-ConnectionSnapshot -Conn $cConn -Snapshot $cn.Snapshot; Save-BlockingChains -Conn $cConn -Rows $cn.Blockings; L "INFO" "[Connections] Total=$($cn.Snapshot.TotalSessions) Blocked=$($cn.Snapshot.BlockedSessions) Chains=$($cn.Blockings.Count)" } catch { L "WARN" "[Connections] $_" }
                 try { $io = Get-DiskIOStats   -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-DiskIOStats   -Conn $cConn -Rows $io;    L "INFO" "[DiskIO] Saved $($io.Count) file entries"         } catch { L "WARN" "[DiskIO] $_" }
                 try { $tb = Get-TempDbStats -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-TempDbStats -Conn $cConn -Rows $tb; L "INFO" "[TempDB] Saved $($tb.Count) tempdb file entries" } catch { L "WARN" "[TempDB] $_" }
-                try { $dl = Get-DeadlockHistory -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-DeadlockHistory -Conn $cConn -Rows $dl; L "INFO" "[Deadlocks] Saved $($dl.Count) deadlock events" } catch { L "WARN" "[Deadlocks] $_" }
                 try { $lg = Get-LogFileStats -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-LogFileStats -Conn $cConn -Rows $lg; L "INFO" "[LogStats] Saved $($lg.Count) log file entries" } catch { L "WARN" "[LogStats] $_" }
                 try { $ih = Get-IndexHealth -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-IndexHealth -Conn $cConn -Result $ih; L "INFO" "[IndexHealth] Missing=$($ih.Missing.Count) Unused=$($ih.Unused.Count)" } catch { L "WARN" "[IndexHealth] $_" }
-                try { $bh = Get-BackupAndAgentHealth -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-BackupAndAgentHealth -Conn $cConn -Result $bh; L "INFO" "[BackupAgent] Backups=$($bh.BackupStatus.Count) Jobs=$($bh.AgentJobs.Count)" } catch { L "WARN" "[BackupAgent] $_" }
+                try { $bk = Get-BackupHealth -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-BackupStatus -Conn $cConn -Rows $bk; L "INFO" "[BackupStatus] Saved $($bk.Count) backup rows" } catch { L "WARN" "[BackupStatus] $_" }
+                try { $aj = Get-AgentHealth -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-AgentJobHealth -Conn $cConn -Rows $aj; L "INFO" "[AgentHealth] Saved $($aj.Count) job rows" } catch { L "WARN" "[AgentHealth] $_" }
                 if ($cq) { try { $q = Get-TopQueries -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-TopQueries -Conn $cConn -Rows $q; L "INFO" "[TopQueries] Saved $($q.Count) queries" } catch { L "WARN" "[TopQueries] $_" } }
                 if ($cf) { try { $f = Get-IndexFragmentation -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-IndexFragStats -Conn $cConn -Rows $f; L "INFO" "[IndexFrag] Saved $($f.Count) index entries" } catch { L "WARN" "[IndexFrag] $_" } }
             }
@@ -367,249 +377,4 @@ while ($true) {
     Start-Sleep -Seconds $sleep
 }
 
-# ------------------------------------------------------------------
-# Bootstrap: load required assembly and scripts
-# ------------------------------------------------------------------
 
-# Prefer the SqlServer module (bundles Microsoft.Data.SqlClient)
-if (Get-Module -ListAvailable -Name SqlServer -ErrorAction SilentlyContinue) {
-    Import-Module SqlServer -ErrorAction Stop
-}
-
-# Verify the type is now available; if not, try locating the DLL directly
-if (-not ([System.Management.Automation.PSTypeName]'Microsoft.Data.SqlClient.SqlConnection').Type) {
-    $assemblyPath = Get-ChildItem "$env:USERPROFILE\.nuget\packages\microsoft.data.sqlclient" `
-        -Recurse -Filter "Microsoft.Data.SqlClient.dll" -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -match "net6|net7|net8|netstandard" } |
-        Select-Object -ExpandProperty FullName -Last 1
-
-    if (-not $assemblyPath) {
-        $assemblyPath = Get-ChildItem "C:\Program Files\dotnet\shared" `
-            -Recurse -Filter "Microsoft.Data.SqlClient.dll" -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty FullName -Last 1
-    }
-
-    if ($assemblyPath) {
-        Add-Type -Path $assemblyPath
-    } else {
-        throw "Cannot find Microsoft.Data.SqlClient. Install the SqlServer module: Install-Module SqlServer -Scope AllUsers"
-    }
-}
-
-# Load helper scripts
-. "$PSScriptRoot\Collectors\Get-SystemMetrics.ps1"
-. "$PSScriptRoot\Collectors\Get-WaitStats.ps1"
-. "$PSScriptRoot\Collectors\Get-TopQueries.ps1"
-. "$PSScriptRoot\Collectors\Get-DatabaseSizes.ps1"
-. "$PSScriptRoot\Collectors\Get-Connections.ps1"
-. "$PSScriptRoot\Collectors\Get-DiskIOStats.ps1"
-. "$PSScriptRoot\Collectors\Get-IndexFragmentation.ps1"
-. "$PSScriptRoot\Storage\Save-Metrics.ps1"
-
-# ------------------------------------------------------------------
-# Load config
-# ------------------------------------------------------------------
-if (-not (Test-Path $ConfigPath)) {
-    throw "Config file not found: $ConfigPath"
-}
-$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Json
-
-$centralConnStr          = $cfg.CentralConnectionString
-$intervalSec             = [int]$cfg.CollectionIntervalSeconds
-$queryIntervalSec        = [int]$cfg.QueryCollectionIntervalSeconds
-$fragIntervalSec         = [int]$cfg.FragmentationIntervalSeconds
-$fragDbTimeoutSec        = if ($cfg.FragmentationDbTimeoutSeconds) { [int]$cfg.FragmentationDbTimeoutSeconds } else { 600 }
-$fragMinPageCount        = if ($cfg.FragmentationMinPageCount)      { [int]$cfg.FragmentationMinPageCount      } else { 200 }
-$fragExcludeDbs          = if ($cfg.FragmentationExcludeDatabases)  { [string[]]$cfg.FragmentationExcludeDatabases } else { @() }
-$retentionDays           = [int]$cfg.RetentionDays
-$instances               = $cfg.MonitoredInstances
-
-# ------------------------------------------------------------------
-# Logging
-# ------------------------------------------------------------------
-$logDir = $cfg.LogPath
-if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
-
-function Write-Log {
-    param([string]$Level, [string]$Message)
-    $ts    = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    $entry = "[$ts] [$Level] $Message"
-    $color = switch ($Level) { 'ERROR' { 'Red' } 'WARN' { 'Yellow' } default { 'Cyan' } }
-    Write-Host $entry -ForegroundColor $color
-    $logFile = Join-Path $logDir "metrics_$(Get-Date -Format 'yyyyMMdd').log"
-    Add-Content -Path $logFile -Value $entry -Encoding UTF8
-}
-
-# ------------------------------------------------------------------
-# Central DB connection helper
-# ------------------------------------------------------------------
-function Open-CentralConnection {
-    $conn = New-Object Microsoft.Data.SqlClient.SqlConnection($centralConnStr)
-    $conn.Open()
-    return $conn
-}
-
-# ------------------------------------------------------------------
-# Timers
-# ------------------------------------------------------------------
-$lastQueryCollect = [DateTime]::MinValue
-$lastFragCollect  = [DateTime]::MinValue
-$lastPurge        = [DateTime]::MinValue
-
-Write-Host ""
-Write-Host "  ╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "  ║        SQL Monitor — Metrics Collection Service                  ║" -ForegroundColor Cyan
-Write-Host "  ╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
-Write-Host "  Started    : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor White
-Write-Host "  Instances  : $($instances.Count)" -ForegroundColor White
-Write-Host "  Intervals  : Core=${intervalSec}s  |  Query=${queryIntervalSec}s  |  Frag=${fragIntervalSec}s" -ForegroundColor White
-Write-Host "  Log Path   : $logDir" -ForegroundColor DarkGray
-Write-Host ""
-Write-Log "INFO" "Service started. $($instances.Count) instances registered."
-
-# Pre-register all instances and cache their IDs
-$instanceIdMap = @{}   # key = instance Name
-try {
-    $centralConn = Open-CentralConnection
-    foreach ($inst in $instances) {
-        $id = Get-OrCreateInstanceId -Conn $centralConn -InstanceName $inst.Name -Tags $inst.Tags
-        $instanceIdMap[$inst.Name] = $id
-        Write-Log "INFO" "Registered instance '$($inst.Name)' -> InstanceId=$id"
-    }
-    $centralConn.Close()
-}
-catch {
-    Write-Log "ERROR" "Failed to connect to central DB or register instances: $_"
-    exit 1
-}
-
-# Startup banner (sequential mode)
-Write-Host ""
-Write-Host "  ╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "  ║        SQL Monitor — Metrics Collection Service                  ║" -ForegroundColor Cyan
-Write-Host "  ╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
-Write-Host "  Started    : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor White
-Write-Host "  Instances  : $($instances.Count)" -ForegroundColor White
-Write-Host "  Intervals  : Core=${intervalSec}s  |  Query=${queryIntervalSec}s  |  Frag=${fragIntervalSec}s" -ForegroundColor White
-Write-Host "  Log Path   : $logDir" -ForegroundColor DarkGray
-Write-Host ""
-
-$cycleNum2 = 0
-while ($true) {
-    $loopStart   = [DateTime]::UtcNow
-    $collectQuery = ($loopStart - $lastQueryCollect).TotalSeconds -ge $queryIntervalSec
-    $collectFrag  = ($loopStart - $lastFragCollect).TotalSeconds  -ge $fragIntervalSec
-    $doPurge      = ($loopStart - $lastPurge).TotalSeconds        -ge 86400   # once a day
-    $cycleNum2++
-
-    $extras2 = @()
-    if ($collectQuery) { $extras2 += 'Queries' }
-    if ($collectFrag)  { $extras2 += 'IndexFrag' }
-    $extraTag2 = if ($extras2) { "  +$($extras2 -join ' +')" } else { '' }
-    Write-Host ""
-    Write-Host "  ┌─────────────────────────────────────────────────────────────────" -ForegroundColor Magenta
-    Write-Host "  │  Cycle #$cycleNum2   $(Get-Date -Format 'HH:mm:ss')   $($instances.Count) instances$extraTag2" -ForegroundColor Magenta
-    Write-Host "  └─────────────────────────────────────────────────────────────────" -ForegroundColor Magenta
-    Write-Log "INFO" "Cycle #$cycleNum2 started — $($instances.Count) instances$extraTag2"
-
-    try {
-        $centralConn = Open-CentralConnection
-
-        foreach ($inst in $instances) {
-            $instanceId  = $instanceIdMap[$inst.Name]
-            $connStr     = $inst.ConnectionString
-            Write-Log "INFO" "Collecting from '$($inst.Name)' (InstanceId=$instanceId)"
-
-            # 1. System CPU + Memory
-            try {
-                $sysMet = Get-SystemMetrics -ConnectionString $connStr -InstanceId $instanceId
-                Save-SystemMetric -Conn $centralConn -Metric $sysMet
-                Write-Log "INFO" "  [SystemMetrics] SQL CPU=$($sysMet.SqlCpuPercent)% SysCPU=$($sysMet.SystemCpuPercent)% MemUsed=$($sysMet.SqlMemoryUsedMB)MB"
-            }
-            catch { Write-Log "WARN" "  [SystemMetrics] $_" }
-
-            # 2. Wait Statistics
-            try {
-                $waits = Get-WaitStats -ConnectionString $connStr -InstanceId $instanceId
-                Save-WaitStats -Conn $centralConn -Rows $waits
-                Write-Log "INFO" "  [WaitStats] Saved $($waits.Count) wait types"
-            }
-            catch { Write-Log "WARN" "  [WaitStats] $_" }
-
-            # 3. Database Sizes
-            try {
-                $dbSizes = Get-DatabaseSizes -ConnectionString $connStr -InstanceId $instanceId
-                Save-DatabaseSizes -Conn $centralConn -Rows $dbSizes
-                Write-Log "INFO" "  [DatabaseSizes] Saved $($dbSizes.Count) databases"
-            }
-            catch { Write-Log "WARN" "  [DatabaseSizes] $_" }
-
-            # 4. Connections + Blocking
-            try {
-                $connData = Get-Connections -ConnectionString $connStr -InstanceId $instanceId
-                Save-ConnectionSnapshot -Conn $centralConn -Snapshot $connData.Snapshot
-                Save-BlockingChains     -Conn $centralConn -Rows $connData.Blockings
-                Write-Log "INFO" "  [Connections] Total=$($connData.Snapshot.TotalSessions) Blocked=$($connData.Snapshot.BlockedSessions) BlockingChains=$($connData.Blockings.Count)"
-            }
-            catch { Write-Log "WARN" "  [Connections] $_" }
-
-            # 5. Disk I/O
-            try {
-                $diskIO = Get-DiskIOStats -ConnectionString $connStr -InstanceId $instanceId
-                Save-DiskIOStats -Conn $centralConn -Rows $diskIO
-                Write-Log "INFO" "  [DiskIO] Saved $($diskIO.Count) file entries"
-            }
-            catch { Write-Log "WARN" "  [DiskIO] $_" }
-
-            # 6. Top Queries  (less frequent)
-            if ($collectQuery) {
-                try {
-                    $queries = Get-TopQueries -ConnectionString $connStr -InstanceId $instanceId
-                    Save-TopQueries -Conn $centralConn -Rows $queries
-                    Write-Log "INFO" "  [TopQueries] Saved $($queries.Count) queries"
-                }
-                catch { Write-Log "WARN" "  [TopQueries] $_" }
-            }
-
-            # 7. Index Fragmentation  (hourly)
-            if ($collectFrag) {
-                try {
-                    Write-Log "INFO" "  [IndexFrag] Starting fragmentation scan (may take minutes)..."
-                    $frags = Get-IndexFragmentation -ConnectionString $connStr -InstanceId $instanceId `
-                        -DbTimeoutSeconds $fragDbTimeoutSec -MinPageCount $fragMinPageCount -ExcludeDatabases $fragExcludeDbs
-                    Save-IndexFragStats -Conn $centralConn -Rows $frags
-                    Write-Log "INFO" "  [IndexFrag] Saved $($frags.Count) index entries"
-                }
-                catch { Write-Log "WARN" "  [IndexFrag] $_" }
-            }
-        }
-
-        # Purge old data (daily)
-        if ($doPurge) {
-            try {
-                Invoke-Purge -Conn $centralConn -RetentionDays $retentionDays
-                Write-Log "INFO" "Purged data older than $retentionDays days"
-                $lastPurge = [DateTime]::UtcNow
-            }
-            catch { Write-Log "WARN" "Purge failed: $_" }
-        }
-
-        $centralConn.Close()
-    }
-    catch {
-        Write-Log "ERROR" "Collection loop error: $_"
-        try { if ($centralConn -and $centralConn.State -ne 'Closed') { $centralConn.Close() } } catch {}
-    }
-
-    if ($collectQuery) { $lastQueryCollect = [DateTime]::UtcNow }
-    if ($collectFrag)  { $lastFragCollect  = [DateTime]::UtcNow }
-
-    $elapsed = ([DateTime]::UtcNow - $loopStart).TotalSeconds
-    $sleep   = [Math]::Max(1, $intervalSec - $elapsed)
-    Write-Host ""
-    Write-Host "  ┌─────────────────────────────────────────────────────────────────" -ForegroundColor Green
-    Write-Host "  │  ✓ Cycle #$cycleNum2 complete   Elapsed: $([Math]::Round($elapsed,1))s   Next in: ${sleep}s   $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor Green
-    Write-Host "  └─────────────────────────────────────────────────────────────────" -ForegroundColor Green
-    Write-Log "INFO" "Cycle #$cycleNum2 done in $([Math]::Round($elapsed,1))s. Next in ${sleep}s."
-    Start-Sleep -Seconds $sleep
-}
