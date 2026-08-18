@@ -9,7 +9,14 @@ function Get-IndexHealth {
 
     $collectedAt = [DateTime]::UtcNow
 
-    $missingSql = @"
+        $sqlDatabases = @"
+SELECT name FROM sys.databases
+WHERE state = 0
+    AND name NOT IN ('master','tempdb','model','msdb')
+ORDER BY name;
+"@
+
+        $missingSql = @"
 SELECT TOP 50
     DB_NAME(mid.database_id)                               AS DatabaseName,
     mid.statement                                          AS StatementText,
@@ -60,6 +67,8 @@ JOIN sys.dm_db_partition_stats AS p
 WHERE ius.database_id = DB_ID()
   AND i.is_hypothetical = 0
   AND i.index_id > 1
+    AND i.is_primary_key = 0
+    AND i.is_unique_constraint = 0
   AND ius.user_seeks = 0
   AND ius.user_scans = 0
   AND ius.user_lookups = 0
@@ -67,59 +76,81 @@ ORDER BY ius.user_updates DESC;
 "@
 
     try {
-        $conn = New-Object Microsoft.Data.SqlClient.SqlConnection($ConnectionString)
-        $conn.Open()
+        $connMaster = New-Object Microsoft.Data.SqlClient.SqlConnection($ConnectionString)
+        $connMaster.Open()
+        $cmdDb = $connMaster.CreateCommand()
+        $cmdDb.CommandText = $sqlDatabases
+        $cmdDb.CommandTimeout = 15
+        $databases = [System.Collections.Generic.List[string]]::new()
+        $rdr = $cmdDb.ExecuteReader()
+        while ($rdr.Read()) { $databases.Add($rdr.GetString(0)) }
+        $rdr.Close()
+        $connMaster.Close()
 
         $missing = [System.Collections.Generic.List[PSCustomObject]]::new()
-        $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $missingSql
-        $cmd.CommandTimeout = 30
-        $reader = $cmd.ExecuteReader()
-        while ($reader.Read()) {
-            $missing.Add([PSCustomObject]@{
-                InstanceId        = $InstanceId
-                CollectedAt       = $collectedAt
-                DatabaseName      = [string]$reader["DatabaseName"]
-                StatementText     = if ($reader.IsDBNull($reader.GetOrdinal("StatementText"))) { $null } else { [string]$reader["StatementText"] }
-                EqualityColumns   = if ($reader.IsDBNull($reader.GetOrdinal("EqualityColumns"))) { $null } else { [string]$reader["EqualityColumns"] }
-                InequalityColumns = if ($reader.IsDBNull($reader.GetOrdinal("InequalityColumns"))) { $null } else { [string]$reader["InequalityColumns"] }
-                IncludedColumns   = if ($reader.IsDBNull($reader.GetOrdinal("IncludedColumns"))) { $null } else { [string]$reader["IncludedColumns"] }
-                UserSeeks         = [long]$reader["UserSeeks"]
-                UniqueCompiles    = [long]$reader["UniqueCompiles"]
-                AvgTotalUserCost  = [double]$reader["AvgTotalUserCost"]
-                AvgUserImpact     = [double]$reader["AvgUserImpact"]
-                LastUserSeek      = if ($reader.IsDBNull($reader.GetOrdinal("LastUserSeek"))) { $null } else { [datetime]$reader["LastUserSeek"] }
-                LastUserScan      = if ($reader.IsDBNull($reader.GetOrdinal("LastUserScan"))) { $null } else { [datetime]$reader["LastUserScan"] }
-            })
-        }
-        $reader.Close()
-
         $unused = [System.Collections.Generic.List[PSCustomObject]]::new()
-        $cmd.CommandText = $unusedSql
-        $reader = $cmd.ExecuteReader()
-        while ($reader.Read()) {
-            $unused.Add([PSCustomObject]@{
-                InstanceId        = $InstanceId
-                CollectedAt       = $collectedAt
-                DatabaseName      = [string]$reader["DatabaseName"]
-                SchemaName        = [string]$reader["SchemaName"]
-                TableName         = [string]$reader["TableName"]
-                IndexName         = [string]$reader["IndexName"]
-                IndexType         = [string]$reader["IndexType"]
-                UserSeeks         = [long]$reader["UserSeeks"]
-                UserScans         = [long]$reader["UserScans"]
-                UserLookups       = [long]$reader["UserLookups"]
-                UserUpdates       = [long]$reader["UserUpdates"]
-                LastUserSeek      = if ($reader.IsDBNull($reader.GetOrdinal("LastUserSeek"))) { $null } else { [datetime]$reader["LastUserSeek"] }
-                LastUserScan      = if ($reader.IsDBNull($reader.GetOrdinal("LastUserScan"))) { $null } else { [datetime]$reader["LastUserScan"] }
-                LastUserLookup    = if ($reader.IsDBNull($reader.GetOrdinal("LastUserLookup"))) { $null } else { [datetime]$reader["LastUserLookup"] }
-                LastUserUpdate    = if ($reader.IsDBNull($reader.GetOrdinal("LastUserUpdate"))) { $null } else { [datetime]$reader["LastUserUpdate"] }
-                RowCount          = [long]$reader["RowCount"]
-            })
-        }
-        $reader.Close()
-        $conn.Close()
 
+        foreach ($db in $databases) {
+            $builder = New-Object Microsoft.Data.SqlClient.SqlConnectionStringBuilder($ConnectionString)
+            $builder["Initial Catalog"] = $db
+            $dbConn = New-Object Microsoft.Data.SqlClient.SqlConnection($builder.ConnectionString)
+            try {
+                $dbConn.Open()
+                $cmd = $dbConn.CreateCommand()
+                $cmd.CommandTimeout = 30
+
+                $cmd.CommandText = $missingSql
+                $reader = $cmd.ExecuteReader()
+                while ($reader.Read()) {
+                    $missing.Add([PSCustomObject]@{
+                        InstanceId        = $InstanceId
+                        CollectedAt       = $collectedAt
+                        DatabaseName      = [string]$reader["DatabaseName"]
+                        StatementText     = if ($reader.IsDBNull($reader.GetOrdinal("StatementText"))) { $null } else { [string]$reader["StatementText"] }
+                        EqualityColumns   = if ($reader.IsDBNull($reader.GetOrdinal("EqualityColumns"))) { $null } else { [string]$reader["EqualityColumns"] }
+                        InequalityColumns = if ($reader.IsDBNull($reader.GetOrdinal("InequalityColumns"))) { $null } else { [string]$reader["InequalityColumns"] }
+                        IncludedColumns   = if ($reader.IsDBNull($reader.GetOrdinal("IncludedColumns"))) { $null } else { [string]$reader["IncludedColumns"] }
+                        UserSeeks         = [long]$reader["UserSeeks"]
+                        UniqueCompiles    = [long]$reader["UniqueCompiles"]
+                        AvgTotalUserCost  = [double]$reader["AvgTotalUserCost"]
+                        AvgUserImpact     = [double]$reader["AvgUserImpact"]
+                        LastUserSeek      = if ($reader.IsDBNull($reader.GetOrdinal("LastUserSeek"))) { $null } else { [datetime]$reader["LastUserSeek"] }
+                        LastUserScan      = if ($reader.IsDBNull($reader.GetOrdinal("LastUserScan"))) { $null } else { [datetime]$reader["LastUserScan"] }
+                    })
+                }
+                $reader.Close()
+
+                $cmd.CommandText = $unusedSql
+                $reader = $cmd.ExecuteReader()
+                while ($reader.Read()) {
+                    $unused.Add([PSCustomObject]@{
+                        InstanceId        = $InstanceId
+                        CollectedAt       = $collectedAt
+                        DatabaseName      = [string]$reader["DatabaseName"]
+                        SchemaName        = [string]$reader["SchemaName"]
+                        TableName         = [string]$reader["TableName"]
+                        IndexName         = [string]$reader["IndexName"]
+                        IndexType         = [string]$reader["IndexType"]
+                        UserSeeks         = [long]$reader["UserSeeks"]
+                        UserScans         = [long]$reader["UserScans"]
+                        UserLookups       = [long]$reader["UserLookups"]
+                        UserUpdates       = [long]$reader["UserUpdates"]
+                        LastUserSeek      = if ($reader.IsDBNull($reader.GetOrdinal("LastUserSeek"))) { $null } else { [datetime]$reader["LastUserSeek"] }
+                        LastUserScan      = if ($reader.IsDBNull($reader.GetOrdinal("LastUserScan"))) { $null } else { [datetime]$reader["LastUserScan"] }
+                        LastUserLookup    = if ($reader.IsDBNull($reader.GetOrdinal("LastUserLookup"))) { $null } else { [datetime]$reader["LastUserLookup"] }
+                        LastUserUpdate    = if ($reader.IsDBNull($reader.GetOrdinal("LastUserUpdate"))) { $null } else { [datetime]$reader["LastUserUpdate"] }
+                        RowCount          = [long]$reader["RowCount"]
+                    })
+                }
+                $reader.Close()
+            }
+            catch {
+                Write-Warning "[Get-IndexHealth] DB '$db' on instance $InstanceId : $($_.Exception.Message)"
+            }
+            finally {
+                if ($null -ne $dbConn -and $dbConn.State -ne 'Closed') { $dbConn.Close() }
+            }
+        }
         return [PSCustomObject]@{
             Missing = $missing
             Unused = $unused
@@ -130,6 +161,6 @@ ORDER BY ius.user_updates DESC;
         return [PSCustomObject]@{ Missing = @(); Unused = @() }
     }
     finally {
-        if ($conn.State -ne 'Closed') { $conn.Close() }
+        if ($null -ne $connMaster -and $connMaster.State -ne 'Closed') { $connMaster.Close() }
     }
 }

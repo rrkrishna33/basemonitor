@@ -115,7 +115,19 @@ async function loadInstanceTitle() {
 async function loadCpu() {
     setContainerState('cpuStatus', 'Loading CPU and memory charts...');
     const rows = await fetchJson(`/api/instances/${instanceId}/system-metrics?hours=24`);
-    const labels = rows.map(r => new Date(r.CollectedAt).toLocaleTimeString());
+    const labels = rows.map(r => new Date(r.CollectedAt).toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    }));
+
+    if (!rows.length) {
+        setContainerState('cpuStatus', 'No CPU or memory samples collected in the last 24 hours.');
+        if (cpuChart) { cpuChart.destroy(); cpuChart = null; }
+        if (memChart) { memChart.destroy(); memChart = null; }
+        return;
+    }
 
     if (cpuChart) cpuChart.destroy();
     cpuChart = new Chart(document.getElementById('cpuChart'), {
@@ -127,7 +139,13 @@ async function loadCpu() {
                 { label: 'System CPU %', data: rows.map(r => r.SystemCpuPercent), borderColor: '#f5a623', tension: 0.2 }
             ]
         },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'CPU (last 24h)', color: '#e6e9ef' } } }
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { title: { display: true, text: 'CPU utilization - last 24 hours' } },
+            scales: { x: { ticks: { maxTicksLimit: 12, maxRotation: 0 } }, y: { beginAtZero: true, max: 100, title: { display: true, text: 'Percent' } } }
+        }
     });
 
     if (memChart) memChart.destroy();
@@ -140,7 +158,13 @@ async function loadCpu() {
                 { label: 'Available Memory MB', data: rows.map(r => r.AvailableMemoryMB), borderColor: '#e74c3c', tension: 0.2 }
             ]
         },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Memory (last 24h)', color: '#e6e9ef' } } }
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { title: { display: true, text: 'Memory utilization - last 24 hours' } },
+            scales: { x: { ticks: { maxTicksLimit: 12, maxRotation: 0 } }, y: { beginAtZero: true, title: { display: true, text: 'MB' } } }
+        }
     });
 
     const status = document.getElementById('cpuStatus');
@@ -277,13 +301,22 @@ async function loadConnections() {
     document.getElementById('connSummary').textContent = s
         ? `Total Sessions: ${s.TotalSessions}  |  Active Requests: ${s.ActiveRequests}  |  Blocked: ${s.BlockedSessions}  (as of ${new Date(s.CollectedAt).toLocaleString()})`
         : 'No connection snapshot collected yet.';
-    data.blocking.forEach(r => { if (r.WaitTimeMs >= 30000) r.__rowClass = 'row-critical'; else r.__rowClass = 'row-warning'; });
+    data.blocking.forEach(r => {
+        if (r.WaitTimeMs >= 30000 || r.BlockingLevel === 'HEAD BLOCKER') r.__rowClass = 'row-critical';
+        else r.__rowClass = 'row-warning';
+    });
     renderTable('blockingTable', data.blocking, [
+        { key: 'BlockingLevel', label: 'Level' },
+        { key: 'BlockingChain', label: 'Chain' },
         { key: 'BlockingSessionId', label: 'Blocking SPID' },
         { key: 'BlockedSessionId', label: 'Blocked SPID' },
+        { key: 'LoginName', label: 'Login' },
+        { key: 'HostName', label: 'Host' },
+        { key: 'DatabaseName', label: 'Database' },
         { key: 'WaitType', label: 'Wait Type' },
-        { key: 'WaitTimeMs', label: 'Wait (ms)' },
-        { key: 'BlockedStatement', label: 'Blocked Statement', fmt: v => (v || '').slice(0, 120) }
+        { key: 'WaitSeconds', label: 'Wait (s)', fmt: v => v == null ? 'n/a' : Number(v).toFixed(1) },
+        { key: 'ElapsedSeconds', label: 'Elapsed (s)', fmt: v => v == null ? 'n/a' : Number(v).toFixed(1) },
+        { key: 'RunningStatement', label: 'Running Statement', fmt: v => (v || '').slice(0, 120) }
     ]);
 }
 

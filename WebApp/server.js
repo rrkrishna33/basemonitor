@@ -14,6 +14,7 @@ app.use('/api', require('./src/routes/queries'));
 app.use('/api', require('./src/routes/indexhealth'));
 app.use('/api', require('./src/routes/connections'));
 app.use('/api', require('./src/routes/settings'));
+app.use('/api', require('./src/routes/performance'));
 
 app.get('/api/config', (req, res) => {
     res.json({ refreshIntervalSeconds: config.refreshIntervalSeconds, thresholds: config.thresholds });

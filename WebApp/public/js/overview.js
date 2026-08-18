@@ -59,6 +59,22 @@ function issueScore(inst, thresholds) {
     return (failedJobs * 1000) + (blocked * 80) + backupAge + sqlCpu + (statusRank(inst.Status) * 10000);
 }
 
+function clampPercent(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return 0;
+    return Math.max(0, Math.min(100, number));
+}
+
+function metricBar(label, value, tone = 'accent') {
+    const display = value == null || value === '' ? 'n/a' : `${value}%`;
+    return `
+        <div class="metric-bar-row">
+            <div class="metric-bar-label"><span>${label}</span><strong>${display}</strong></div>
+            <div class="metric-bar-track"><span class="metric-bar-fill tone-${tone}" style="width:${clampPercent(value)}%"></span></div>
+        </div>
+    `;
+}
+
 function populateTagFilter(instances) {
     const tagFilter = document.getElementById('tagFilter');
     const currentValue = tagFilter.value || 'All';
@@ -119,10 +135,11 @@ function renderSummary(instances) {
     root.innerHTML = `
         <div class="summary-head">
             <div>
+                <span class="summary-eyebrow">SQL SERVER OPERATIONS</span>
                 <h2>OverAll Health</h2>
                 <p class="summary-meta">${total} monitored instances • latest sample ${freshness}</p>
             </div>
-            <div class="summary-clock">${new Date().toLocaleTimeString()}</div>
+            <div class="summary-live"><span class="live-dot"></span><span>Live</span><strong>${new Date().toLocaleTimeString()}</strong></div>
         </div>
         <div class="summary-strip">
             <div class="summary-chip critical"><span>Critical</span><strong>${critical}</strong></div>
@@ -149,15 +166,22 @@ function renderTiles(instances, thresholds) {
 
     grid.innerHTML = sorted.map((inst, idx) => `
         <div class="tile status-${inst.Status}" style="--idx:${idx}" onclick="location.href='instance.html?id=${inst.InstanceId}'">
-            <h3>${escapeHtml(inst.InstanceName)} <span class="badge status-${inst.Status}">${escapeHtml(inst.Status)}</span></h3>
-            <div class="tile-reason">${escapeHtml(issueReason(inst, thresholds))}</div>
-            <div class="tags">${escapeHtml(inst.Tags || '')}</div>
-            <div class="metric-row"><span>SQL CPU</span><span class="value">${inst.SqlCpuPercent ?? 'n/a'}%</span></div>
-            <div class="metric-row"><span>System CPU</span><span class="value">${inst.SystemCpuPercent ?? 'n/a'}%</span></div>
-            <div class="metric-row"><span>SQL Memory Used</span><span class="value">${inst.SqlMemoryUsedMB ?? 'n/a'} MB</span></div>
-            <div class="metric-row"><span>Blocked Sessions</span><span class="value">${inst.BlockedSessions ?? 0}</span></div>
-            <div class="metric-row"><span>Oldest Full Backup</span><span class="value">${fmtAge(inst.WorstFullBackupAgeHours)}</span></div>
-            <div class="metric-row"><span>Failed Jobs</span><span class="value">${inst.FailedJobCount ?? 0}</span></div>
+            <div class="tile-heading">
+                <div><h3>${escapeHtml(inst.InstanceName)}</h3><div class="tags">${escapeHtml(inst.Tags || 'Unassigned')}</div></div>
+                <span class="badge status-${inst.Status}">${escapeHtml(inst.Status)}</span>
+            </div>
+            <div class="tile-reason"><span class="reason-mark">!</span>${escapeHtml(issueReason(inst, thresholds))}</div>
+            <div class="tile-bars">
+                ${metricBar('SQL CPU', inst.SqlCpuPercent, inst.Status === 'Critical' ? 'critical' : 'accent')}
+                ${metricBar('System CPU', inst.SystemCpuPercent, 'warning')}
+            </div>
+            <div class="tile-stat-grid">
+                <div><span>Memory used</span><strong>${inst.SqlMemoryUsedMB ?? 'n/a'} MB</strong></div>
+                <div><span>Sessions</span><strong>${inst.TotalSessions ?? 'n/a'}</strong></div>
+                <div><span>Blocked</span><strong class="${Number(inst.BlockedSessions || 0) > 0 ? 'stat-alert' : ''}">${inst.BlockedSessions ?? 0}</strong></div>
+                <div><span>Failed jobs</span><strong class="${Number(inst.FailedJobCount || 0) > 0 ? 'stat-alert' : ''}">${inst.FailedJobCount ?? 0}</strong></div>
+            </div>
+            <div class="tile-footer"><span>Full backup age</span><strong>${fmtAge(inst.WorstFullBackupAgeHours)}</strong><span class="open-hint">Open details &#8594;</span></div>
         </div>
     `).join('');
 }

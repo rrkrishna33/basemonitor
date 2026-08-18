@@ -16,10 +16,13 @@ router.get('/instances/:id/connections', async (req, res) => {
         const blocking = await query(
             `DECLARE @id INT = @instanceId;
              DECLARE @latest DATETIME2 = (SELECT MAX(CollectedAt) FROM dbo.BlockingChains WHERE InstanceId = @id);
-             SELECT BlockingSessionId, BlockedSessionId, WaitType, WaitTimeMs, BlockingStatement, BlockedStatement, CollectedAt
+                  SELECT BlockingLevel, BlockingChain, BlockingSessionId, BlockedSessionId,
+                      LoginName, HostName, ProgramName, DatabaseName, RequestStatus, Command,
+                      WaitType, WaitTimeMs, WaitSeconds, CpuTimeMs, ElapsedSeconds,
+                      RunningStatement, BatchText, BlockingStatement, BlockedStatement, CollectedAt
              FROM dbo.BlockingChains
              WHERE InstanceId = @id AND CollectedAt = @latest
-             ORDER BY WaitTimeMs DESC`,
+                  ORDER BY BlockingChain, WaitTimeMs DESC`,
             { instanceId: id }
         );
 

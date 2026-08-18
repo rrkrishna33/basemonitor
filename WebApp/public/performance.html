@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>SQL Monitor - Performance Tuning</title>
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+    <header class="topbar">
+        <h1>Performance Tuning</h1>
+        <div class="topbar-actions">
+            <a class="top-link" href="index.html">Overview</a>
+            <a class="top-link" href="settings.html">Settings</a>
+        </div>
+    </header>
+    <main>
+        <section class="panel performance-hero">
+            <div>
+                <span class="summary-eyebrow">DBA PERFORMANCE WORKBENCH</span>
+                <h2>Find the work consuming your instance</h2>
+                <p class="settings-help">Latest collected query, wait, and storage signals ranked by operational impact.</p>
+            </div>
+            <div class="performance-controls">
+                <label>Instance<select id="instanceFilter"><option value="All">All instances</option></select></label>
+                <button id="refreshPerformance" class="action-btn" type="button">Refresh Data</button>
+            </div>
+        </section>
+
+        <section class="performance-grid">
+            <article class="panel performance-panel">
+                <div class="section-heading"><div><span class="section-kicker">CPU CONSUMPTION</span><h2>Top Queries</h2></div><span id="queryCount" class="count-badge">0</span></div>
+                <div id="queryTable" class="performance-table-wrap"><p class="empty-note">Loading queries...</p></div>
+            </article>
+            <article class="panel performance-panel">
+                <div class="section-heading"><div><span class="section-kicker">STORED PROGRAMS</span><h2>Top Procedures</h2></div><span id="procedureCount" class="count-badge">0</span></div>
+                <div id="procedureTable" class="performance-table-wrap"><p class="empty-note">Loading procedures...</p></div>
+            </article>
+            <article class="panel performance-panel">
+                <div class="section-heading"><div><span class="section-kicker">WAIT PROFILE</span><h2>Top Waits</h2></div><span id="waitCount" class="count-badge">0</span></div>
+                <div id="waitTable" class="performance-table-wrap"><p class="empty-note">Loading waits...</p></div>
+            </article>
+            <article class="panel performance-panel performance-wide">
+                <div class="section-heading"><div><span class="section-kicker">STORAGE PRESSURE</span><h2>I/O Hotspots</h2></div><span id="ioCount" class="count-badge">0</span></div>
+                <div id="ioTable" class="performance-table-wrap"><p class="empty-note">Loading I/O...</p></div>
+            </article>
+        </section>
+    </main>
+    <div id="sqlModal" class="sql-modal" hidden>
+        <div class="sql-modal-backdrop" data-close-sql></div>
+        <section class="sql-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="sqlModalTitle">
+            <div class="sql-modal-header"><div><span class="section-kicker">SQL TEXT</span><h2 id="sqlModalTitle">Query</h2></div><button id="closeSqlModal" class="modal-close" type="button" aria-label="Close">&times;</button></div>
+            <pre id="sqlModalText"></pre>
+        </section>
+    </div>
+    <script src="js/performance.js"></script>
+</body>
+</html>

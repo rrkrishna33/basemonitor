@@ -108,13 +108,16 @@ function Save-TopQueries {
     if (-not $Rows -or $Rows.Count -eq 0) { return }
 
     $dt = New-Object System.Data.DataTable
-    @("InstanceId","CollectedAt","DatabaseName","QueryText","AvgCpuUs","TotalCpuUs",
+    @("InstanceId","CollectedAt","DatabaseName","ProcedureSchema","ProcedureName","QueryText","AvgCpuUs","TotalCpuUs",
       "ExecutionCount","AvgDurationUs","AvgLogicalReads","AvgPhysicalReads","AvgLogicalWrites",
       "LastExecutedAt","PlanCreatedAt") | ForEach-Object { $dt.Columns.Add($_) | Out-Null }
 
     foreach ($r in $Rows) {
         $dt.Rows.Add(
-            $r.InstanceId,$r.CollectedAt,$r.DatabaseName,$r.QueryText,
+            $r.InstanceId,$r.CollectedAt,$r.DatabaseName,
+            $(if ($r.ProcedureSchema) { $r.ProcedureSchema } else { [DBNull]::Value }),
+            $(if ($r.ProcedureName) { $r.ProcedureName } else { [DBNull]::Value }),
+            $r.QueryText,
             $r.AvgCpuUs,$r.TotalCpuUs,$r.ExecutionCount,$r.AvgDurationUs,
             $r.AvgLogicalReads,$r.AvgPhysicalReads,$r.AvgLogicalWrites,
             $(if ($r.LastExecutedAt) { $r.LastExecutedAt } else { [DBNull]::Value }),
@@ -176,13 +179,30 @@ function Save-BlockingChains {
     if (-not $Rows -or $Rows.Count -eq 0) { return }
 
     $dt = New-Object System.Data.DataTable
-    @("InstanceId","CollectedAt","BlockingSessionId","BlockedSessionId","WaitType","WaitTimeMs","BlockingStatement","BlockedStatement") |
+    @("InstanceId","CollectedAt","BlockingLevel","BlockingChain","BlockingSessionId","BlockedSessionId",
+      "LoginName","HostName","ProgramName","DatabaseName","RequestStatus","Command","WaitType","WaitTimeMs",
+      "WaitSeconds","CpuTimeMs","ElapsedSeconds","RunningStatement","BatchText","BlockingStatement","BlockedStatement") |
         ForEach-Object { $dt.Columns.Add($_) | Out-Null }
 
     foreach ($r in $Rows) {
-        $dt.Rows.Add($r.InstanceId,$r.CollectedAt,$r.BlockingSessionId,$r.BlockedSessionId,
+        $dt.Rows.Add($r.InstanceId,$r.CollectedAt,
+            $(if ($r.BlockingLevel) { $r.BlockingLevel } else { [DBNull]::Value }),
+            $(if ($r.BlockingChain) { $r.BlockingChain } else { [DBNull]::Value }),
+            $r.BlockingSessionId,
+            $(if ($null -ne $r.BlockedSessionId) { $r.BlockedSessionId } else { [DBNull]::Value }),
+            $(if ($r.LoginName) { $r.LoginName } else { [DBNull]::Value }),
+            $(if ($r.HostName) { $r.HostName } else { [DBNull]::Value }),
+            $(if ($r.ProgramName) { $r.ProgramName } else { [DBNull]::Value }),
+            $(if ($r.DatabaseName) { $r.DatabaseName } else { [DBNull]::Value }),
+            $(if ($r.RequestStatus) { $r.RequestStatus } else { [DBNull]::Value }),
+            $(if ($r.Command) { $r.Command } else { [DBNull]::Value }),
             $(if ($r.WaitType)          { $r.WaitType          } else { [DBNull]::Value }),
             $r.WaitTimeMs,
+            $r.WaitSeconds,
+            $r.CpuTimeMs,
+            $r.ElapsedSeconds,
+            $(if ($r.RunningStatement) { $r.RunningStatement } else { [DBNull]::Value }),
+            $(if ($r.BatchText) { $r.BatchText } else { [DBNull]::Value }),
             $(if ($r.BlockingStatement) { $r.BlockingStatement } else { [DBNull]::Value }),
             $(if ($r.BlockedStatement)  { $r.BlockedStatement  } else { [DBNull]::Value })
         ) | Out-Null

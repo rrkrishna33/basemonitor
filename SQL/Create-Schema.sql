@@ -85,6 +85,8 @@ BEGIN
         InstanceId          INT NOT NULL REFERENCES dbo.MonitoredInstances(InstanceId),
         CollectedAt         DATETIME2 NOT NULL,
         DatabaseName        NVARCHAR(256) NULL,
+        ProcedureSchema     NVARCHAR(256) NULL,
+        ProcedureName       NVARCHAR(512) NULL,
         QueryText           NVARCHAR(MAX) NULL,
         AvgCpuUs            BIGINT NULL,
         TotalCpuUs          BIGINT NULL,
@@ -97,6 +99,8 @@ BEGIN
         PlanCreatedAt       DATETIME2 NULL
     );
 END
+IF COL_LENGTH('dbo.TopQueries', 'ProcedureSchema') IS NULL ALTER TABLE dbo.TopQueries ADD ProcedureSchema NVARCHAR(256) NULL;
+IF COL_LENGTH('dbo.TopQueries', 'ProcedureName') IS NULL ALTER TABLE dbo.TopQueries ADD ProcedureName NVARCHAR(512) NULL;
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_TopQueries_Instance_Time' AND object_id = OBJECT_ID('dbo.TopQueries'))
 BEGIN
     CREATE INDEX IX_TopQueries_Instance_Time ON dbo.TopQueries(InstanceId, CollectedAt DESC);
@@ -164,6 +168,19 @@ BEGIN
         BlockedStatement    NVARCHAR(MAX) NULL
     );
 END
+IF COL_LENGTH('dbo.BlockingChains', 'BlockingLevel') IS NULL ALTER TABLE dbo.BlockingChains ADD BlockingLevel NVARCHAR(32) NULL;
+IF COL_LENGTH('dbo.BlockingChains', 'BlockingChain') IS NULL ALTER TABLE dbo.BlockingChains ADD BlockingChain NVARCHAR(MAX) NULL;
+IF COL_LENGTH('dbo.BlockingChains', 'LoginName') IS NULL ALTER TABLE dbo.BlockingChains ADD LoginName NVARCHAR(256) NULL;
+IF COL_LENGTH('dbo.BlockingChains', 'HostName') IS NULL ALTER TABLE dbo.BlockingChains ADD HostName NVARCHAR(256) NULL;
+IF COL_LENGTH('dbo.BlockingChains', 'ProgramName') IS NULL ALTER TABLE dbo.BlockingChains ADD ProgramName NVARCHAR(256) NULL;
+IF COL_LENGTH('dbo.BlockingChains', 'DatabaseName') IS NULL ALTER TABLE dbo.BlockingChains ADD DatabaseName NVARCHAR(128) NULL;
+IF COL_LENGTH('dbo.BlockingChains', 'RequestStatus') IS NULL ALTER TABLE dbo.BlockingChains ADD RequestStatus NVARCHAR(60) NULL;
+IF COL_LENGTH('dbo.BlockingChains', 'Command') IS NULL ALTER TABLE dbo.BlockingChains ADD Command NVARCHAR(128) NULL;
+IF COL_LENGTH('dbo.BlockingChains', 'WaitSeconds') IS NULL ALTER TABLE dbo.BlockingChains ADD WaitSeconds FLOAT NULL;
+IF COL_LENGTH('dbo.BlockingChains', 'CpuTimeMs') IS NULL ALTER TABLE dbo.BlockingChains ADD CpuTimeMs INT NULL;
+IF COL_LENGTH('dbo.BlockingChains', 'ElapsedSeconds') IS NULL ALTER TABLE dbo.BlockingChains ADD ElapsedSeconds FLOAT NULL;
+IF COL_LENGTH('dbo.BlockingChains', 'RunningStatement') IS NULL ALTER TABLE dbo.BlockingChains ADD RunningStatement NVARCHAR(MAX) NULL;
+IF COL_LENGTH('dbo.BlockingChains', 'BatchText') IS NULL ALTER TABLE dbo.BlockingChains ADD BatchText NVARCHAR(MAX) NULL;
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_BlockingChains_Instance_Time' AND object_id = OBJECT_ID('dbo.BlockingChains'))
 BEGIN
     CREATE INDEX IX_BlockingChains_Instance_Time ON dbo.BlockingChains(InstanceId, CollectedAt DESC);

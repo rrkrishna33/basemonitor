@@ -44,24 +44,50 @@ WHERE s.is_user_process = 1
 ORDER BY r.blocking_session_id DESC, s.session_id;
 "@
 
-    # --- Blocking chains ---
+    # --- Recursive blocking tree ---
     $sqlBlocking = @"
+;WITH BlockingTree AS
+(
+    SELECT r.session_id, r.blocking_session_id,
+           CAST(CAST(r.session_id AS VARCHAR(10)) AS VARCHAR(MAX)) AS BlockingChain,
+           0 AS LevelNo
+    FROM sys.dm_exec_requests r
+    WHERE r.blocking_session_id = 0
+      AND EXISTS (SELECT 1 FROM sys.dm_exec_requests r2 WHERE r2.blocking_session_id = r.session_id)
+    UNION ALL
+    SELECT r.session_id, r.blocking_session_id,
+           CAST(bt.BlockingChain + ' -> ' + CAST(r.session_id AS VARCHAR(10)) AS VARCHAR(MAX)),
+           bt.LevelNo + 1
+    FROM sys.dm_exec_requests r
+    INNER JOIN BlockingTree bt ON r.blocking_session_id = bt.session_id
+)
 SELECT
-    r.blocking_session_id                       AS BlockingSessionId,
-    r.session_id                                AS BlockedSessionId,
-    r.wait_type                                 AS WaitType,
-    r.wait_time                                 AS WaitTimeMs,
-    SUBSTRING(btext.text, (br.statement_start_offset/2)+1,
-        ((CASE br.statement_end_offset WHEN -1 THEN DATALENGTH(btext.text) ELSE br.statement_end_offset END
-         - br.statement_start_offset)/2)+1)     AS BlockingStatement,
-    SUBSTRING(qt.text, (r.statement_start_offset/2)+1,
-        ((CASE r.statement_end_offset WHEN -1 THEN DATALENGTH(qt.text) ELSE r.statement_end_offset END
-         - r.statement_start_offset)/2)+1)      AS BlockedStatement
-FROM sys.dm_exec_requests AS r
-OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) AS qt
-LEFT JOIN sys.dm_exec_requests AS br ON br.session_id = r.blocking_session_id
-OUTER APPLY sys.dm_exec_sql_text(br.sql_handle) AS btext
-WHERE r.blocking_session_id > 0;
+    CASE WHEN bt.LevelNo = 0 THEN 'HEAD BLOCKER' ELSE 'BLOCKED' END AS BlockingLevel,
+    bt.BlockingChain,
+    CASE WHEN bt.LevelNo = 0 THEN r.session_id ELSE r.blocking_session_id END AS BlockingSessionId,
+    CASE WHEN bt.LevelNo = 0 THEN NULL ELSE r.session_id END AS BlockedSessionId,
+    s.login_name AS LoginName,
+    s.host_name AS HostName,
+    s.program_name AS ProgramName,
+    DB_NAME(r.database_id) AS DatabaseName,
+    r.status AS RequestStatus,
+    r.command AS Command,
+    r.wait_type AS WaitType,
+    r.wait_time AS WaitTimeMs,
+    r.wait_time / 1000.0 AS WaitSeconds,
+    r.cpu_time AS CpuTimeMs,
+    r.total_elapsed_time / 1000.0 AS ElapsedSeconds,
+    SUBSTRING(st.text, (r.statement_start_offset/2)+1,
+        ((CASE r.statement_end_offset WHEN -1 THEN DATALENGTH(st.text) ELSE r.statement_end_offset END
+          - r.statement_start_offset)/2)+1) AS RunningStatement,
+    st.text AS BatchText,
+    st.text AS BlockedStatement
+FROM BlockingTree bt
+INNER JOIN sys.dm_exec_requests r ON bt.session_id = r.session_id
+INNER JOIN sys.dm_exec_sessions s ON r.session_id = s.session_id
+OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) st
+ORDER BY bt.BlockingChain
+OPTION (MAXRECURSION 100);
 "@
 
     $snapshot   = $null
@@ -111,10 +137,23 @@ WHERE r.blocking_session_id > 0;
             $blockings.Add([PSCustomObject]@{
                 InstanceId        = $InstanceId
                 CollectedAt       = $collectedAt
+                BlockingLevel     = [string]$reader["BlockingLevel"]
+                BlockingChain     = [string]$reader["BlockingChain"]
                 BlockingSessionId = [int]$reader["BlockingSessionId"]
-                BlockedSessionId  = [int]$reader["BlockedSessionId"]
+                BlockedSessionId  = if ($reader.IsDBNull($reader.GetOrdinal("BlockedSessionId"))) { $null } else { [int]$reader["BlockedSessionId"] }
+                LoginName         = [string]$reader["LoginName"]
+                HostName          = [string]$reader["HostName"]
+                ProgramName       = [string]$reader["ProgramName"]
+                DatabaseName      = if ($reader.IsDBNull($reader.GetOrdinal("DatabaseName"))) { $null } else { [string]$reader["DatabaseName"] }
+                RequestStatus     = [string]$reader["RequestStatus"]
+                Command           = [string]$reader["Command"]
                 WaitType          = if ($reader.IsDBNull($reader.GetOrdinal("WaitType")))          { $null } else { [string]$reader["WaitType"] }
                 WaitTimeMs        = [int]$reader["WaitTimeMs"]
+                WaitSeconds       = [double]$reader["WaitSeconds"]
+                CpuTimeMs         = [int]$reader["CpuTimeMs"]
+                ElapsedSeconds    = [double]$reader["ElapsedSeconds"]
+                RunningStatement  = if ($reader.IsDBNull($reader.GetOrdinal("RunningStatement"))) { $null } else { [string]$reader["RunningStatement"] }
+                BatchText         = if ($reader.IsDBNull($reader.GetOrdinal("BatchText"))) { $null } else { [string]$reader["BatchText"] }
                 BlockingStatement = if ($reader.IsDBNull($reader.GetOrdinal("BlockingStatement"))) { $null } else { [string]$reader["BlockingStatement"] }
                 BlockedStatement  = if ($reader.IsDBNull($reader.GetOrdinal("BlockedStatement")))  { $null } else { [string]$reader["BlockedStatement"] }
             })

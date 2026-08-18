@@ -12,6 +12,8 @@ function Get-TopQueries {
     $sql = @"
 SELECT TOP 50
     DB_NAME(qt.dbid)                                    AS DatabaseName,
+    OBJECT_SCHEMA_NAME(qt.objectid, qt.dbid)             AS ProcedureSchema,
+    OBJECT_NAME(qt.objectid, qt.dbid)                    AS ProcedureName,
     SUBSTRING(qt.text, (qs.statement_start_offset/2)+1,
         ((CASE qs.statement_end_offset
             WHEN -1 THEN DATALENGTH(qt.text)
@@ -46,6 +48,8 @@ ORDER BY qs.total_worker_time DESC;
                 InstanceId        = $InstanceId
                 CollectedAt       = $collectedAt
                 DatabaseName      = if ($reader.IsDBNull($reader.GetOrdinal("DatabaseName"))) { $null } else { [string]$reader["DatabaseName"] }
+                ProcedureSchema   = if ($reader.IsDBNull($reader.GetOrdinal("ProcedureSchema"))) { $null } else { [string]$reader["ProcedureSchema"] }
+                ProcedureName     = if ($reader.IsDBNull($reader.GetOrdinal("ProcedureName"))) { $null } else { [string]$reader["ProcedureName"] }
                 QueryText         = if ($reader.IsDBNull($reader.GetOrdinal("QueryText")))    { $null } else { [string]$reader["QueryText"] }
                 AvgCpuUs          = [long]$reader["AvgCpuUs"]
                 TotalCpuUs        = [long]$reader["TotalCpuUs"]

@@ -80,6 +80,13 @@ $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 $centralConnStr   = $cfg.CentralConnectionString
 $intervalSec      = [int]$cfg.CollectionIntervalSeconds
 $queryIntervalSec = [int]$cfg.QueryCollectionIntervalSeconds
+$databaseSizeIntervalSec = if ($cfg.DatabaseSizeIntervalSeconds) { [int]$cfg.DatabaseSizeIntervalSeconds } else { 300 }
+$diskIoIntervalSec = if ($cfg.DiskIOIntervalSeconds) { [int]$cfg.DiskIOIntervalSeconds } else { 300 }
+$tempDbIntervalSec = if ($cfg.TempDbIntervalSeconds) { [int]$cfg.TempDbIntervalSeconds } else { 300 }
+$logStatsIntervalSec = if ($cfg.LogStatsIntervalSeconds) { [int]$cfg.LogStatsIntervalSeconds } else { 300 }
+$backupHealthIntervalSec = if ($cfg.BackupHealthIntervalSeconds) { [int]$cfg.BackupHealthIntervalSeconds } else { 300 }
+$agentHealthIntervalSec = if ($cfg.AgentHealthIntervalSeconds) { [int]$cfg.AgentHealthIntervalSeconds } else { 300 }
+$indexHealthIntervalSec = if ($cfg.IndexHealthIntervalSeconds) { [int]$cfg.IndexHealthIntervalSeconds } else { 3600 }
 $fragIntervalSec      = [int]$cfg.FragmentationIntervalSeconds
 $fragDbTimeoutSec     = if ($cfg.FragmentationDbTimeoutSeconds) { [int]$cfg.FragmentationDbTimeoutSeconds } else { 600 }
 $fragMinPageCount     = if ($cfg.FragmentationMinPageCount)      { [int]$cfg.FragmentationMinPageCount      } else { 200 }
@@ -123,6 +130,13 @@ function Open-CentralConnection {
 # immediately trigger a long, per-database fragmentation scan and block
 # the core metrics/backup/agent collection from ever completing.
 $lastQueryCollect = [DateTime]::MinValue
+$lastDatabaseSizeCollect = [DateTime]::UtcNow
+$lastDiskIoCollect = [DateTime]::UtcNow
+$lastTempDbCollect = [DateTime]::UtcNow
+$lastLogStatsCollect = [DateTime]::UtcNow
+$lastBackupHealthCollect = [DateTime]::UtcNow
+$lastAgentHealthCollect = [DateTime]::UtcNow
+$lastIndexHealthCollect = [DateTime]::UtcNow
 $lastFragCollect  = [DateTime]::UtcNow
 $lastPurge        = [DateTime]::MinValue
 
@@ -132,7 +146,7 @@ Write-Host "  ║        SQL Monitor — Metrics Collection Service             
 Write-Host "  ╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host "  Started    : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor White
 Write-Host "  Instances  : $($instances.Count)" -ForegroundColor White
-Write-Host "  Intervals  : Core=${intervalSec}s  |  Query=${queryIntervalSec}s  |  Frag=${fragIntervalSec}s" -ForegroundColor White
+Write-Host "  Intervals  : Core=${intervalSec}s  |  Query=${queryIntervalSec}s  |  Snapshots=300s  |  IndexHealth=${indexHealthIntervalSec}s  |  Frag=${fragIntervalSec}s" -ForegroundColor White
 Write-Host "  Parallel   : $ParallelBatchSize concurrent" -ForegroundColor White
 Write-Host "  Log Path   : $logDir" -ForegroundColor DarkGray
 Write-Host ""
@@ -265,12 +279,26 @@ $cycleNum = 0
 while ($true) {
     $loopStart    = [DateTime]::UtcNow
     $collectQuery = ($loopStart - $lastQueryCollect).TotalSeconds -ge $queryIntervalSec
+    $collectDatabaseSize = ($loopStart - $lastDatabaseSizeCollect).TotalSeconds -ge $databaseSizeIntervalSec
+    $collectDiskIo = ($loopStart - $lastDiskIoCollect).TotalSeconds -ge $diskIoIntervalSec
+    $collectTempDb = ($loopStart - $lastTempDbCollect).TotalSeconds -ge $tempDbIntervalSec
+    $collectLogStats = ($loopStart - $lastLogStatsCollect).TotalSeconds -ge $logStatsIntervalSec
+    $collectBackupHealth = ($loopStart - $lastBackupHealthCollect).TotalSeconds -ge $backupHealthIntervalSec
+    $collectAgentHealth = ($loopStart - $lastAgentHealthCollect).TotalSeconds -ge $agentHealthIntervalSec
+    $collectIndexHealth = ($loopStart - $lastIndexHealthCollect).TotalSeconds -ge $indexHealthIntervalSec
     $collectFrag  = ($loopStart - $lastFragCollect).TotalSeconds  -ge $fragIntervalSec
     $doPurge      = ($loopStart - $lastPurge).TotalSeconds        -ge 86400
     $cycleNum++
 
     $extras = @()
     if ($collectQuery) { $extras += 'Queries' }
+    if ($collectDatabaseSize) { $extras += 'DBSizes' }
+    if ($collectDiskIo) { $extras += 'DiskIO' }
+    if ($collectTempDb) { $extras += 'TempDB' }
+    if ($collectLogStats) { $extras += 'LogStats' }
+    if ($collectBackupHealth) { $extras += 'Backups' }
+    if ($collectAgentHealth) { $extras += 'Agent' }
+    if ($collectIndexHealth) { $extras += 'IndexHealth' }
     if ($collectFrag)  { $extras += 'IndexFrag' }
     $extraTag = if ($extras) { "  +$($extras -join ' +')" } else { '' }
 
@@ -287,6 +315,13 @@ while ($true) {
             $idHash        = $using:instanceIdHash
             $instId        = $idHash[$inst.Name]
             $cq            = $using:collectQuery
+            $cdb           = $using:collectDatabaseSize
+            $cio           = $using:collectDiskIo
+            $ctd           = $using:collectTempDb
+            $cls           = $using:collectLogStats
+            $cbh           = $using:collectBackupHealth
+            $cah           = $using:collectAgentHealth
+            $cih           = $using:collectIndexHealth
             $cf            = $using:collectFrag
             $sr            = $using:scriptRoot
             $cc            = $using:centralConnStr_
@@ -317,14 +352,14 @@ while ($true) {
 
                 try { $s = Get-SystemMetrics  -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-SystemMetric  -Conn $cConn -Metric $s;  L "INFO" "[SystemMetrics] SQL CPU=$($s.SqlCpuPercent)% SysCPU=$($s.SystemCpuPercent)% MemUsed=$($s.SqlMemoryUsedMB)MB"  } catch { L "WARN" "[SystemMetrics] $_" }
                 try { $w = Get-WaitStats      -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-WaitStats     -Conn $cConn -Rows $w;     L "INFO" "[WaitStats] Saved $($w.Count) wait types"        } catch { L "WARN" "[WaitStats] $_" }
-                try { $d = Get-DatabaseSizes  -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-DatabaseSizes -Conn $cConn -Rows $d;     L "INFO" "[DatabaseSizes] Saved $($d.Count) databases"      } catch { L "WARN" "[DatabaseSizes] $_" }
+                if ($cdb) { try { $d = Get-DatabaseSizes  -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-DatabaseSizes -Conn $cConn -Rows $d; L "INFO" "[DatabaseSizes] Saved $($d.Count) databases" } catch { L "WARN" "[DatabaseSizes] $_" } }
                 try { $cn = Get-Connections   -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-ConnectionSnapshot -Conn $cConn -Snapshot $cn.Snapshot; Save-BlockingChains -Conn $cConn -Rows $cn.Blockings; L "INFO" "[Connections] Total=$($cn.Snapshot.TotalSessions) Blocked=$($cn.Snapshot.BlockedSessions) Chains=$($cn.Blockings.Count)" } catch { L "WARN" "[Connections] $_" }
-                try { $io = Get-DiskIOStats   -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-DiskIOStats   -Conn $cConn -Rows $io;    L "INFO" "[DiskIO] Saved $($io.Count) file entries"         } catch { L "WARN" "[DiskIO] $_" }
-                try { $tb = Get-TempDbStats -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-TempDbStats -Conn $cConn -Rows $tb; L "INFO" "[TempDB] Saved $($tb.Count) tempdb file entries" } catch { L "WARN" "[TempDB] $_" }
-                try { $lg = Get-LogFileStats -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-LogFileStats -Conn $cConn -Rows $lg; L "INFO" "[LogStats] Saved $($lg.Count) log file entries" } catch { L "WARN" "[LogStats] $_" }
-                try { $ih = Get-IndexHealth -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-IndexHealth -Conn $cConn -Result $ih; L "INFO" "[IndexHealth] Missing=$($ih.Missing.Count) Unused=$($ih.Unused.Count)" } catch { L "WARN" "[IndexHealth] $_" }
-                try { $bk = Get-BackupHealth -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-BackupStatus -Conn $cConn -Rows $bk; L "INFO" "[BackupStatus] Saved $($bk.Count) backup rows" } catch { L "WARN" "[BackupStatus] $_" }
-                try { $aj = Get-AgentHealth -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-AgentJobHealth -Conn $cConn -Rows $aj; L "INFO" "[AgentHealth] Saved $($aj.Count) job rows" } catch { L "WARN" "[AgentHealth] $_" }
+                if ($cio) { try { $io = Get-DiskIOStats   -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-DiskIOStats   -Conn $cConn -Rows $io; L "INFO" "[DiskIO] Saved $($io.Count) file entries" } catch { L "WARN" "[DiskIO] $_" } }
+                if ($ctd) { try { $tb = Get-TempDbStats -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-TempDbStats -Conn $cConn -Rows $tb; L "INFO" "[TempDB] Saved $($tb.Count) tempdb file entries" } catch { L "WARN" "[TempDB] $_" } }
+                if ($cls) { try { $lg = Get-LogFileStats -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-LogFileStats -Conn $cConn -Rows $lg; L "INFO" "[LogStats] Saved $($lg.Count) log file entries" } catch { L "WARN" "[LogStats] $_" } }
+                if ($cih) { try { $ih = Get-IndexHealth -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-IndexHealth -Conn $cConn -Result $ih; L "INFO" "[IndexHealth] Missing=$($ih.Missing.Count) Unused=$($ih.Unused.Count)" } catch { L "WARN" "[IndexHealth] $_" } }
+                if ($cbh) { try { $bk = Get-BackupHealth -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-BackupStatus -Conn $cConn -Rows $bk; L "INFO" "[BackupStatus] Saved $($bk.Count) backup rows" } catch { L "WARN" "[BackupStatus] $_" } }
+                if ($cah) { try { $aj = Get-AgentHealth -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-AgentJobHealth -Conn $cConn -Rows $aj; L "INFO" "[AgentHealth] Saved $($aj.Count) job rows" } catch { L "WARN" "[AgentHealth] $_" } }
                 if ($cq) { try { $q = Get-TopQueries -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-TopQueries -Conn $cConn -Rows $q; L "INFO" "[TopQueries] Saved $($q.Count) queries" } catch { L "WARN" "[TopQueries] $_" } }
                 if ($cf) { try { $f = Get-IndexFragmentation -ConnectionString $inst.ConnectionString -InstanceId $instId; Save-IndexFragStats -Conn $cConn -Rows $f; L "INFO" "[IndexFrag] Saved $($f.Count) index entries" } catch { L "WARN" "[IndexFrag] $_" } }
             }
@@ -365,6 +400,13 @@ while ($true) {
     }
 
     if ($collectQuery) { $lastQueryCollect = [DateTime]::UtcNow }
+    if ($collectDatabaseSize) { $lastDatabaseSizeCollect = [DateTime]::UtcNow }
+    if ($collectDiskIo) { $lastDiskIoCollect = [DateTime]::UtcNow }
+    if ($collectTempDb) { $lastTempDbCollect = [DateTime]::UtcNow }
+    if ($collectLogStats) { $lastLogStatsCollect = [DateTime]::UtcNow }
+    if ($collectBackupHealth) { $lastBackupHealthCollect = [DateTime]::UtcNow }
+    if ($collectAgentHealth) { $lastAgentHealthCollect = [DateTime]::UtcNow }
+    if ($collectIndexHealth) { $lastIndexHealthCollect = [DateTime]::UtcNow }
     if ($collectFrag)  { $lastFragCollect  = [DateTime]::UtcNow }
 
     $elapsed = ([DateTime]::UtcNow - $loopStart).TotalSeconds

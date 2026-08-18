@@ -10,6 +10,7 @@
     <header class="topbar">
         <h1 id="instanceTitle">SQL Monitor</h1>
         <div class="topbar-actions">
+            <a class="top-link" href="performance.html">Performance</a>
             <a class="top-link" href="settings.html">Settings</a>
             <span id="instanceRefresh" class="empty-note"></span>
             <a href="index.html">&larr; Back to overview</a>
@@ -50,6 +51,7 @@
 
             <section class="instance-content">
                 <div id="tab-cpu" class="tab-content active panel">
+                    <div class="chart-range"><span>Performance history</span><strong>Last 24 hours</strong></div>
                     <div id="cpuStatus" class="panel-state">Loading chart data...</div>
                     <div class="chart-wrap"><canvas id="cpuChart"></canvas></div>
                     <div class="chart-wrap"><canvas id="memChart"></canvas></div>
