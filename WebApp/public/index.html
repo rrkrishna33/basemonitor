@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>SQL Monitor - Overview</title>
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+    <header class="topbar">
+        <h1>SQL Monitor</h1>
+        <div class="topbar-actions">
+            <a class="top-link" href="settings.html">Settings</a>
+            <button id="densityToggle" class="action-btn" type="button" aria-pressed="false">Compact Mode</button>
+            <span id="lastRefresh" class="empty-note"></span>
+        </div>
+    </header>
+    <main>
+        <section id="healthSummary" class="health-summary panel">
+            <p class="empty-note">Loading health summary...</p>
+        </section>
+        <section class="panel overview-controls" aria-label="Overview filters">
+            <div class="control-item">
+                <label for="statusFilter">Status</label>
+                <select id="statusFilter">
+                    <option value="All">All</option>
+                    <option value="Critical">Critical</option>
+                    <option value="Warning">Warning</option>
+                    <option value="Healthy">Healthy</option>
+                </select>
+            </div>
+            <div class="control-item">
+                <label for="tagFilter">Tag</label>
+                <select id="tagFilter">
+                    <option value="All">All</option>
+                </select>
+            </div>
+            <div class="control-item search-item">
+                <label for="nameFilter">Instance search</label>
+                <input id="nameFilter" type="search" placeholder="Type instance name" />
+            </div>
+            <div class="control-item control-check">
+                <label>
+                    <input id="failedOnly" type="checkbox" />
+                    Failed jobs only
+                </label>
+                <label>
+                    <input id="blockedOnly" type="checkbox" />
+                    Blocked sessions only
+                </label>
+            </div>
+        </section>
+        <div id="tileGrid" class="tile-grid">
+            <p class="empty-note">Loading instances...</p>
+        </div>
+    </main>
+    <script src="js/overview.js"></script>
+</body>
+</html>

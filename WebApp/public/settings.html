@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>SQL Monitor - Settings</title>
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+    <header class="topbar">
+        <h1>Settings</h1>
+        <div class="topbar-actions">
+            <a class="top-link" href="index.html">&larr; Back to overview</a>
+        </div>
+    </header>
+    <main>
+        <section class="panel settings-panel">
+            <h2>Monitored Servers</h2>
+            <p class="settings-help">Add or remove server entries used by the collector service.</p>
+            <div id="settingsNotice" class="empty-note"></div>
+            <div id="serversTableWrap"></div>
+
+            <form id="serverForm" class="settings-form" autocomplete="off">
+                <div class="settings-grid">
+                    <label>
+                        Server Name
+                        <input id="serverName" type="text" required placeholder="Example: OVHCHN_DEV01" />
+                    </label>
+                    <label>
+                        Tags
+                        <input id="serverTags" type="text" placeholder="Example: CHN DEV" />
+                    </label>
+                    <label class="settings-span-2">
+                        Connection String
+                        <input id="serverConnectionString" type="text" required placeholder="Server=...;Database=master;Integrated Security=true;TrustServerCertificate=true;" />
+                    </label>
+                </div>
+                <button class="action-btn" type="submit">Add Server</button>
+            </form>
+        </section>
+
+        <section class="panel settings-panel">
+            <h2>Alert Thresholds</h2>
+            <p class="settings-help">Update the values used to determine warning and critical states in the dashboard.</p>
+            <form id="alertsForm" class="settings-form" autocomplete="off">
+                <div class="settings-grid">
+                    <label>
+                        CPU Warning (%)
+                        <input id="cpuWarningPercent" type="number" min="1" required />
+                    </label>
+                    <label>
+                        CPU Critical (%)
+                        <input id="cpuCriticalPercent" type="number" min="1" required />
+                    </label>
+                    <label>
+                        Full Backup Warning (hours)
+                        <input id="fullBackupWarningHours" type="number" min="1" required />
+                    </label>
+                    <label>
+                        Full Backup Critical (hours)
+                        <input id="fullBackupCriticalHours" type="number" min="1" required />
+                    </label>
+                    <label>
+                        Log Backup Warning (hours)
+                        <input id="logBackupWarningHours" type="number" min="0" step="0.1" required />
+                    </label>
+                    <label>
+                        Blocking Critical (ms)
+                        <input id="blockingCriticalMs" type="number" min="1" required />
+                    </label>
+                </div>
+                <button class="action-btn" type="submit">Save Alerts</button>
+            </form>
+        </section>
+    </main>
+
+    <script src="js/settings.js"></script>
+</body>
+</html>

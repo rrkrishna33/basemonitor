@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>SQL Monitor - Instance Detail</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+<body>
+    <header class="topbar">
+        <h1 id="instanceTitle">SQL Monitor</h1>
+        <div class="topbar-actions">
+            <a class="top-link" href="settings.html">Settings</a>
+            <span id="instanceRefresh" class="empty-note"></span>
+            <a href="index.html">&larr; Back to overview</a>
+        </div>
+    </header>
+    <main>
+        <section id="instanceSnapshot" class="panel instance-snapshot">
+            <div class="snapshot-head">
+                <div>
+                    <h2 id="instanceName">Loading instance...</h2>
+                    <p id="instanceMeta" class="summary-meta"></p>
+                </div>
+                <span id="instanceStatusBadge" class="badge">Unknown</span>
+            </div>
+            <div class="snapshot-kpis">
+                <div class="snapshot-kpi"><span>SQL CPU</span><strong id="kpiSqlCpu">n/a</strong></div>
+                <div class="snapshot-kpi"><span>Blocked Sessions</span><strong id="kpiBlocked">n/a</strong></div>
+                <div class="snapshot-kpi"><span>Failed Jobs</span><strong id="kpiFailedJobs">n/a</strong></div>
+                <div class="snapshot-kpi"><span>Oldest Full Backup</span><strong id="kpiBackupAge">n/a</strong></div>
+            </div>
+        </section>
+
+        <div class="instance-layout">
+            <aside class="instance-nav panel">
+                <div class="instance-nav-title">Instance Sections</div>
+                <button class="tab-btn active" data-tab="cpu">CPU / Memory</button>
+                <button class="tab-btn" data-tab="waits">Wait Stats</button>
+                <button class="tab-btn" data-tab="databases">Databases</button>
+                <button class="tab-btn" data-tab="diskio">Disk IO</button>
+                <button class="tab-btn" data-tab="tempdb">TempDB</button>
+                <button class="tab-btn" data-tab="logstats">Log / VLF</button>
+                <button class="tab-btn" data-tab="backups">Backups</button>
+                <button class="tab-btn" data-tab="agent">Agent Jobs</button>
+                <button class="tab-btn" data-tab="queries">Top Queries</button>
+                <button class="tab-btn" data-tab="indexhealth">Index Health</button>
+                <button class="tab-btn" data-tab="connections">Connections / Blocking</button>
+            </aside>
+
+            <section class="instance-content">
+                <div id="tab-cpu" class="tab-content active panel">
+                    <div id="cpuStatus" class="panel-state">Loading chart data...</div>
+                    <div class="chart-wrap"><canvas id="cpuChart"></canvas></div>
+                    <div class="chart-wrap"><canvas id="memChart"></canvas></div>
+                </div>
+
+                <div id="tab-waits" class="tab-content panel"><div id="waitsTable"></div></div>
+                <div id="tab-databases" class="tab-content panel"><div id="databasesTable"></div></div>
+                <div id="tab-diskio" class="tab-content panel"><div id="diskioTable"></div></div>
+                <div id="tab-tempdb" class="tab-content panel"><div id="tempdbTable"></div></div>
+                <div id="tab-logstats" class="tab-content panel"><div id="logstatsTable"></div></div>
+                <div id="tab-backups" class="tab-content panel"><div id="backupsTable"></div></div>
+                <div id="tab-agent" class="tab-content panel"><div id="agentTable"></div></div>
+                <div id="tab-queries" class="tab-content panel"><div id="queriesTable"></div></div>
+                <div id="tab-indexhealth" class="tab-content panel">
+                    <h3>Missing Indexes</h3><div id="missingTable"></div>
+                    <h3>Unused Indexes</h3><div id="unusedTable"></div>
+                    <h3>Fragmentation</h3><div id="fragTable"></div>
+                </div>
+                <div id="tab-connections" class="tab-content panel">
+                    <div id="connSummary" class="empty-note"></div>
+                    <h3>Blocking Chains</h3><div id="blockingTable"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+    <script src="js/instance.js"></script>
+</body>
+</html>

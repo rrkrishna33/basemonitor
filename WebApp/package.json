@@ -1,0 +1,13 @@
+{
+  "name": "sql-monitor-webapp",
+  "version": "1.0.0",
+  "description": "Web dashboard for the basemonitor SQL Server monitoring tool (reads CHN_DBA repository)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mssql": "^11.0.1"
+  }
+}

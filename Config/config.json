@@ -14,8 +14,25 @@
   "RetentionDays": 30,
   "LogPath": "C:\\Logs\\SqlMetricsService",
   "MonitoredInstances": [
-    
-    { "Name": "OVHCHN_DEV01", "ConnectionString": "Server=OVHWEDEV-SQL027\\OVHCHN_DEV01;Database=master;Integrated Security=true;TrustServerCertificate=true;", "Tags": "CHN DEV" },
-    { "Name": "OVHCDP_INT01", "ConnectionString": "Server=OVHWEDEV-SQL015\\OVHCDP_INT01;Database=master;Integrated Security=true;TrustServerCertificate=true;", "Tags": "CDP INT" }
-      ]
+    {
+      "Name": "OVHCHN_DEV01",
+      "ConnectionString": "Server=OVHWEDEV-SQL027\\OVHCHN_DEV01;Database=master;Integrated Security=true;TrustServerCertificate=true;",
+      "Tags": "CHN DEV"
+    },
+    {
+      "Name": "OVHCDP_INT01",
+      "ConnectionString": "Server=OVHWEDEV-SQL015\\OVHCDP_INT01;Database=master;Integrated Security=true;TrustServerCertificate=true;",
+      "Tags": "CDP INT"
+    },
+    {
+      "Name": "OVHCDP_INT02",
+      "ConnectionString": "Server=OVHWEDEV-SQL015\\OVHCDP_INT02;Database=master;Integrated Security=true;TrustServerCertificate=true;",
+      "Tags": "CDP INT02"
+    },
+    {
+      "Name": "OVHCDP_INT03",
+      "ConnectionString": "Server=OVHWEDEV-SQL015\\OVHCDP_INT03;Database=master;Integrated Security=true;TrustServerCertificate=true;",
+      "Tags": "CDP INT03"
+    }
+  ]
 }
